@@ -1,0 +1,5 @@
+{
+  "name": "SmartSheets AI",
+  "description": "A powerful spreadsheet application inspired by Google Sheets. Features Excel file import/export, formula support, and an integrated Gemini AI assistant for data analysis and formula generation.",
+  "requestFramePermissions": []
+}
