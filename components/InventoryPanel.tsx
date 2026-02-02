@@ -5,7 +5,7 @@ import {
   AlertTriangle, CheckCircle2, TrendingUp, PackageX,
   ArrowRight, Database, ShoppingCart, Monitor, Copy, History, Edit, Save, CalendarPlus,
   Settings, ArrowDownToLine, ArrowUpFromLine, Truck, ArrowUpDown, ChevronUp, ChevronDown, Clock,
-  Hourglass, SearchCode, Eye, CopyCheck, ListPlus, CircleHelp, FileText
+  Hourglass, SearchCode, Eye, CopyCheck, ListPlus, CircleHelp, FileText, CalendarCheck
 } from 'lucide-react';
 import { calculateRestockPlan } from '../utils/inventory';
 import { RestockRecommendation, DisplayInfo } from '../types';
@@ -162,6 +162,51 @@ const HelpModal = ({ onClose }: { onClose: () => void }) => (
     </div>
 );
 
+// --- Confirmation Modal for Bulk Zero Stock ---
+const ZeroStockConfirmModal = ({ items, onConfirm, onCancel }: { items: string[], onConfirm: (saveHistory: boolean) => void, onCancel: () => void }) => (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in zoom-in duration-200">
+        <div className="bg-[#1b1b1b] border border-orange-500 rounded-xl shadow-2xl w-full max-w-lg overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-800 bg-black flex justify-between items-center">
+                <div className="flex items-center space-x-2 text-orange-500">
+                    <AlertTriangle className="w-5 h-5" />
+                    <h3 className="font-bold text-white">Xác nhận hàng không tồn</h3>
+                </div>
+                <button onClick={onCancel} className="text-gray-400 hover:text-white"><X className="w-5 h-5" /></button>
+            </div>
+            
+            <div className="p-6 space-y-4">
+                <p className="text-gray-300 text-sm">
+                    Phát hiện <strong className="text-white">{items.length}</strong> sản phẩm trong danh sách <strong>không có tồn kho (Tồn TBA = 0)</strong>.
+                </p>
+                <div className="bg-[#121212] border border-gray-800 rounded-lg p-3 max-h-32 overflow-y-auto">
+                    <ul className="text-xs text-gray-500 space-y-1">
+                        {items.map(code => <li key={code}>• {code}</li>)}
+                    </ul>
+                </div>
+                <p className="text-sm text-gray-400">
+                    Bạn có muốn ghi nhận lịch sử là <span className="text-white font-bold">"Đã từng trưng bày"</span> vào ngày đã chọn cho các mã này không?
+                </p>
+            </div>
+
+            <div className="px-6 py-4 bg-black border-t border-gray-800 flex justify-end space-x-3">
+                <button 
+                    onClick={() => onConfirm(false)}
+                    className="px-4 py-2 text-sm text-gray-300 hover:text-white hover:bg-gray-800 rounded-lg transition-colors border border-gray-700"
+                >
+                    Bỏ qua (Không cập nhật)
+                </button>
+                <button 
+                    onClick={() => onConfirm(true)}
+                    className="px-4 py-2 text-sm bg-orange-600 text-white font-bold rounded-lg hover:bg-orange-700 transition-colors shadow-sm"
+                >
+                    Ghi nhận lịch sử
+                </button>
+            </div>
+        </div>
+    </div>
+);
+
+
 // --- Edit Modal Component ---
 const EditDisplayModal = ({ item, onClose, onSave }: { item: RestockRecommendation, onClose: () => void, onSave: (date: string, condition: string) => void }) => {
     const [startDate, setStartDate] = useState(item.displayInfo?.startDate || new Date().toISOString().split('T')[0]);
@@ -273,6 +318,8 @@ export const InventoryPanel: React.FC<InventoryPanelProps> = ({ onClose }) => {
   
   // Promo / List Check
   const [promoInput, setPromoInput] = useState('');
+  const [bulkDate, setBulkDate] = useState(new Date().toISOString().split('T')[0]);
+  const [zeroStockItems, setZeroStockItems] = useState<string[]>([]); // For modal
   
   // Editing State
   const [editingItem, setEditingItem] = useState<RestockRecommendation | null>(null);
@@ -342,6 +389,51 @@ export const InventoryPanel: React.FC<InventoryPanelProps> = ({ onClose }) => {
           return item;
       }));
       setEditingItem(null);
+  };
+
+  // --- Bulk Update Logic ---
+  const handleBulkUpdateClick = () => {
+      const codes = promoInput.split(/[\n,;]+/).map(s => s.trim().toLowerCase()).filter(s => s);
+      if (codes.length === 0) return;
+
+      const foundItems = rawResults.filter(r => codes.some(c => r.code.toLowerCase().includes(c)));
+      
+      const zeroStock = foundItems.filter(r => r.currentStockTBA === 0).map(r => r.code);
+      const hasStock = foundItems.filter(r => r.currentStockTBA > 0).map(r => r.code);
+
+      if (zeroStock.length > 0) {
+          // Open Modal, wait for decision
+          setZeroStockItems(zeroStock);
+          // We will process 'hasStock' immediately or wait? 
+          // Better to process 'hasStock' immediately, and process zeroStock after confirmation.
+          finalizeBulkUpdate(hasStock); 
+      } else {
+          // No issues, update all
+          finalizeBulkUpdate(hasStock);
+          alert(`Đã cập nhật ${hasStock.length} sản phẩm thành công.`);
+      }
+  };
+
+  const finalizeBulkUpdate = (codesToUpdate: string[]) => {
+      if (codesToUpdate.length === 0) return;
+      
+      setRawResults(prev => prev.map(item => {
+          if (codesToUpdate.includes(item.code)) {
+               return {
+                  ...item,
+                  displayInfo: { startDate: bulkDate, condition: 'New' }
+               };
+          }
+          return item;
+      }));
+  };
+
+  const handleZeroStockConfirm = (saveHistory: boolean) => {
+      if (saveHistory) {
+          finalizeBulkUpdate(zeroStockItems);
+          alert(`Đã ghi nhận lịch sử trưng bày cho ${zeroStockItems.length} mã không tồn.`);
+      }
+      setZeroStockItems([]);
   };
 
   const handleSort = (key: SortConfig['key']) => {
@@ -557,7 +649,7 @@ export const InventoryPanel: React.FC<InventoryPanelProps> = ({ onClose }) => {
     }
 
     return result;
-  }, [rawResults, searchText, searchMode, quickFilter, selectedSource, filterBT, filterTBA, filterStatus, sortConfig, promoInput, filterPromoDisplay]);
+  }, [rawResults, searchText, searchMode, quickFilter, selectedSource, filterBT, filterTBA, filterStatus, sortConfig, promoInput, filterPromoDisplay, bulkDate]);
 
   const copyToClipboard = (text: string) => {
       navigator.clipboard.writeText(text);
@@ -600,6 +692,15 @@ export const InventoryPanel: React.FC<InventoryPanelProps> = ({ onClose }) => {
             item={editingItem} 
             onClose={() => setEditingItem(null)} 
             onSave={handleUpdateDisplay}
+          />
+      )}
+
+      {/* Bulk Zero Stock Confirmation Modal */}
+      {zeroStockItems.length > 0 && (
+          <ZeroStockConfirmModal 
+            items={zeroStockItems} 
+            onConfirm={handleZeroStockConfirm} 
+            onCancel={() => setZeroStockItems([])} 
           />
       )}
 
@@ -675,10 +776,33 @@ export const InventoryPanel: React.FC<InventoryPanelProps> = ({ onClose }) => {
                         value={promoInput}
                         onChange={(e) => setPromoInput(e.target.value)}
                     ></textarea>
+                    
+                    {/* Bulk Date Selection for Promo Input */}
+                    <div className="mt-2 pt-2 border-t border-gray-700">
+                        <label className="text-[10px] text-gray-400 font-bold uppercase mb-1 block">Cập nhật ngày trưng cho list này:</label>
+                        <div className="flex space-x-2">
+                             <input 
+                                type="date" 
+                                value={bulkDate}
+                                onChange={(e) => setBulkDate(e.target.value)}
+                                className="flex-1 border border-gray-600 rounded-lg px-2 py-1.5 text-xs bg-[#121212] text-white focus:ring-1 focus:ring-orange-500 outline-none"
+                            />
+                            <button
+                                onClick={handleBulkUpdateClick}
+                                disabled={!promoInput.trim()}
+                                className="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center transition-colors disabled:opacity-50"
+                                title="Cập nhật hàng loạt"
+                            >
+                                <CalendarCheck className="w-3.5 h-3.5 mr-1" />
+                                Áp dụng
+                            </button>
+                        </div>
+                    </div>
+
                     <button 
                         onClick={() => setQuickFilter('PROMO_CHECK')}
                         disabled={!promoInput.trim()}
-                        className="mt-2 w-full bg-orange-500 text-black py-2 rounded-lg text-xs font-bold hover:bg-orange-600 transition-all disabled:opacity-50 flex items-center justify-center shadow-sm"
+                        className="mt-3 w-full bg-orange-500 text-black py-2 rounded-lg text-xs font-bold hover:bg-orange-600 transition-all disabled:opacity-50 flex items-center justify-center shadow-sm"
                     >
                         <Eye className="w-3 h-3 mr-1.5" />
                         Kiểm Tra Ngay
