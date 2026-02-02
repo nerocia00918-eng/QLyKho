@@ -48,7 +48,7 @@ export interface SourcingPlan {
 
 export interface DisplayInfo {
   startDate: string; // ISO Date String (YYYY-MM-DD)
-  condition: 'New' | 'Used' | 'Scratched' | 'Unknown';
+  condition: string; // Changed from fixed union to string to allow custom inputs
 }
 
 export interface SlowStockInfo {
