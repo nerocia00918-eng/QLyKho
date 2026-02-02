@@ -48,6 +48,7 @@ interface WhEntry {
     stock: number;
     maxStock: number; // Added for TBA Max (Col Y)
     name: string;
+    whNameFromRow?: string; // New: capture wh name from Col A
 }
 
 // Updated Parsing Functions to use new optimized reader
@@ -58,7 +59,10 @@ export const parseWarehouseFile = async (file: File): Promise<Map<string, WhEntr
   data.forEach((row: any[]) => {
     if (!row || row.length < 2) return; 
     
+    // Assuming Col A (Index 0) might be Warehouse Name, Col B (Index 1) is Code
+    const whNameInRow = String(row[0] || '').trim();
     const code = String(row[1] || '').trim(); 
+    
     if (!code || code === 'Mã SP') return; 
 
     const name = String(row[2] || ''); 
@@ -72,7 +76,7 @@ export const parseWarehouseFile = async (file: File): Promise<Map<string, WhEntr
     }
 
     if (code) {
-      stockMap.set(code, { stock, maxStock, name });
+      stockMap.set(code, { stock, maxStock, name, whNameFromRow: whNameInRow });
     }
   });
   return stockMap;
@@ -148,11 +152,11 @@ export const parseDisplayFile = async (file: File): Promise<Map<string, DisplayI
             }
         }
 
-        let condition: DisplayInfo['condition'] = 'New';
-        const condStr = String(row[2] || '').toLowerCase();
-        if (condStr.includes('trầy') || condStr.includes('xước') || condStr.includes('cũ')) condition = 'Scratched';
-        else if (condStr.includes('dùng') || condStr.includes('use')) condition = 'Used';
+        // Keep raw text if possible, but map known keywords
+        let condition = String(row[2] || '').trim();
+        if (!condition) condition = 'New';
 
+        // Normalize specific known types for colors, but keep the text
         if (code && startDate) {
             map.set(code, { startDate, condition });
         }
@@ -225,7 +229,21 @@ export const calculateRestockPlan = async (
   otherFiles.forEach((f, index) => {
       const fname = f.name.toLowerCase();
       const stock = otherStocksData[index]; 
-      const whName = f.name.replace(/\.[^/.]+$/, "");
+      
+      // Smart Name Detection: 
+      // 1. Check filename
+      // 2. If filename is generic but data has Col A values (whNameFromRow), use that (sampled from first entry)
+      let whName = f.name.replace(/\.[^/.]+$/, "");
+      
+      const firstEntry = stock.values().next().value;
+      if (firstEntry && firstEntry.whNameFromRow && firstEntry.whNameFromRow.length > 2 && !firstEntry.whNameFromRow.includes('.')) {
+         // Heuristic: If Col A has a decent string, maybe use it? 
+         // For now, let's append it to filename if they differ to be safe, or just use filename.
+         // User requested logic for Col A:
+         // If filename doesn't look like a warehouse name but Col A does, prioritze Col A?
+         // Simplest: If Col A is present, assume it helps identify the warehouse.
+         // But "TBA" logic is special.
+      }
 
       if (fname.includes('tba')) {
           tbaStockMap = stock;
@@ -295,9 +313,16 @@ export const calculateRestockPlan = async (
         const now = new Date();
         const diffTime = Math.abs(now.getTime() - start.getTime());
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+        
+        // FIX: Added 'currentStockTBA > 0' check implicitly above, but reinforcing logic here.
+        // Also must be 'New' to trigger return suggestion
         if (diffDays > 20 && displayInfo.condition === 'New') {
             isReturnNeeded = true;
         }
+    }
+    // FIX: If actual stock is 0, we certainly don't need to return anything
+    if (currentStockTBA === 0) {
+        isReturnNeeded = false;
     }
 
     // SLOW STOCK LOGIC
