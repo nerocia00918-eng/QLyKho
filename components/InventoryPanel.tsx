@@ -113,7 +113,7 @@ const HelpModal = ({ onClose }: { onClose: () => void }) => (
                             <h5 className="font-bold text-white mb-2">File Kho Khác / Chi Nhánh</h5>
                             <p className="text-sm text-gray-400 mb-2">Nơi chứa các file kho từ nơi khác mà bạn có thể kéo hàng về (VD: Kho 64, Kho 7BC, Kho Q7...).</p>
                             <ul className="list-disc list-inside text-xs space-y-1 text-gray-500">
-                                <li>Hệ thống dùng tên File làm tên Kho (VD: `Kho_Q9.xlsx` -> Kho Q9).</li>
+                                <li>Hệ thống dùng tên File làm tên Kho (VD: `Kho_Q9.xlsx` &rarr; Kho Q9).</li>
                                 <li>Có thể chọn nhiều file cùng lúc.</li>
                             </ul>
                         </div>
@@ -131,8 +131,8 @@ const HelpModal = ({ onClose }: { onClose: () => void }) => (
                              <span className="text-sm font-bold text-white bg-purple-900/50 px-2 py-1 rounded border border-purple-900">QL Trưng Bày</span>
                              <p className="text-sm mt-1">Quản lý hàng mẫu trưng bày. Hệ thống tự động đề xuất:</p>
                              <ul className="list-disc list-inside text-xs mt-1 pl-2 text-gray-400">
-                                 <li><strong className="text-blue-400">Kéo Trưng Bày:</strong> Kho chính có hàng nhưng chưa trưng -> Cần lấy ra trưng.</li>
-                                 <li><strong className="text-red-400">Trả Kho (&gt;20N):</strong> Hàng trưng bày (Mới) đã để trên kệ quá 20 ngày -> Cần trả về kho để bán mới, tránh trôi bảo hành/cũ. (Chỉ báo khi kho trưng bày thực sự có hàng).</li>
+                                 <li><strong className="text-blue-400">Kéo Trưng Bày:</strong> Kho chính có hàng nhưng chưa trưng &rarr; Cần lấy ra trưng.</li>
+                                 <li><strong className="text-red-400">Trả Kho (&gt;20N):</strong> Hàng trưng bày (Mới) đã để trên kệ quá 20 ngày &rarr; Cần trả về kho để bán mới, tránh trôi bảo hành/cũ. (Chỉ báo khi kho trưng bày thực sự có hàng).</li>
                                  <li><strong className="text-yellow-500">Cân Nhắc Trả:</strong> Kho trưng bày còn hàng, nhưng kho chính đã hết sạch. Có thể cân nhắc trả hàng trưng về bán cho khách nếu cần gấp.</li>
                              </ul>
                         </div>
@@ -1216,7 +1216,7 @@ export const InventoryPanel: React.FC<InventoryPanelProps> = ({ onClose }) => {
                                                                             </>
                                                                         ) : (
                                                                             <span className="text-[10px] text-gray-500 italic">
-                                                                                Lịch sử: {r.displayInfo.startDate}
+                                                                                ({r.displayInfo.startDate})
                                                                             </span>
                                                                         )}
                                                                     </div>
