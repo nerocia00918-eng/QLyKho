@@ -270,15 +270,13 @@ export const InventoryPanel: React.FC<InventoryPanelProps> = ({ onClose }) => {
   const [quickFilter, setQuickFilter] = useState<QuickFilterType>('ALL');
   const [selectedSource, setSelectedSource] = useState<string>('ALL');
   const [filterBT, setFilterBT] = useState<string>('ALL');
-  // Removed filterTBA, filterStatus, filterPromoDisplay from strict typing if not used, 
-  // but keeping variables for filter logic logic restoration
-  const [filterTBA, setFilterTBA] = useState<string>('ALL');
-  const [filterStatus, setFilterStatus] = useState<string>('ALL'); // Used for Critical/Normal etc
-  const [filterPromoDisplay, setFilterPromoDisplay] = useState<string>('ALL');
+  const [filterStatus, setFilterStatus] = useState<string>('ALL'); 
   
-  // NEW FILTERS
+  // FILTERS
+  const [filterTBA, setFilterTBA] = useState<string>('ALL');
   const [filterABC, setFilterABC] = useState<string>('ALL');
   const [filterCondition, setFilterCondition] = useState<string>('ALL');
+  const [filterOtherStock, setFilterOtherStock] = useState<string>('ALL'); // NEW: For "Tồn Kho Khác" / "Tồn Chi Nhánh"
 
   const [sortConfig, setSortConfig] = useState<SortConfig | null>(null);
 
@@ -370,7 +368,7 @@ export const InventoryPanel: React.FC<InventoryPanelProps> = ({ onClose }) => {
   };
 
   const handleBulkUpdateClick = () => {
-      const codes = promoInput.split(/[\n,;]+/).map(s => s.trim().toLowerCase()).filter(s => s);
+      const codes = promoInput.split(/[\n\t,;]+/).map(s => s.trim().toLowerCase()).filter(s => s);
       if (codes.length === 0) return;
       const foundItems = rawResults.filter(r => codes.some(c => r.code.toLowerCase().includes(c)));
       
@@ -471,8 +469,79 @@ export const InventoryPanel: React.FC<InventoryPanelProps> = ({ onClose }) => {
       navigator.clipboard.writeText(text);
       // Removed alert to be less intrusive
   };
-  const handleCopyPromoDisplayed = () => { /* Logic retained */ };
-  const handleCopyPromoOpportunity = () => { /* Logic retained */ };
+  
+  const handleCopyPromoDisplayed = () => {
+      const inputCodes = promoInput.split(/[\n\t,;]+/).map(s => s.trim().toLowerCase()).filter(s => s);
+      if (inputCodes.length === 0) { alert("Chưa nhập danh sách mã."); return; }
+      
+      // CREATE MAP FOR EXACT LOOKUP
+      const codeMap = new Map<string, RestockRecommendation>();
+      rawResults.forEach(r => codeMap.set(r.code.toLowerCase(), r));
+
+      const foundItems: RestockRecommendation[] = [];
+      const missingCodes: string[] = [];
+
+      inputCodes.forEach(c => {
+          const item = codeMap.get(c);
+          if (item) foundItems.push(item);
+          else missingCodes.push(c);
+      });
+      
+      // Criteria: Has stock in display warehouse (TBA > 0)
+      const hits = foundItems.filter(r => r.currentStockTBA > 0);
+      
+      if (hits.length === 0) { 
+          alert(`Đã tìm thấy ${foundItems.length} mã trong hệ thống, nhưng KHÔNG CÓ mã nào có tồn trưng bày (TBA > 0).`); 
+          return; 
+      }
+      
+      copyToClipboard(hits.map(r => r.code).join('\n'));
+      
+      let msg = `Đã copy ${hits.length} mã ĐANG TRƯNG BÀY (TBA > 0).\n`;
+      msg += `- Tổng nhập: ${inputCodes.length}\n`;
+      msg += `- Tìm thấy trong file: ${foundItems.length}\n`;
+      msg += `- Đạt điều kiện: ${hits.length}`;
+      if (missingCodes.length > 0) {
+          msg += `\n- Không tìm thấy (có thể do sai mã): ${missingCodes.length}`;
+      }
+      alert(msg);
+  };
+
+  const handleCopyPromoOpportunity = () => {
+      const inputCodes = promoInput.split(/[\n\t,;]+/).map(s => s.trim().toLowerCase()).filter(s => s);
+      if (inputCodes.length === 0) { alert("Chưa nhập danh sách mã."); return; }
+      
+      // CREATE MAP FOR EXACT LOOKUP
+      const codeMap = new Map<string, RestockRecommendation>();
+      rawResults.forEach(r => codeMap.set(r.code.toLowerCase(), r));
+
+      const foundItems: RestockRecommendation[] = [];
+      const missingCodes: string[] = [];
+
+      inputCodes.forEach(c => {
+          const item = codeMap.get(c);
+          if (item) foundItems.push(item);
+          else missingCodes.push(c);
+      });
+
+      // Criteria: Zero stock in display warehouse
+      const hits = foundItems.filter(r => r.currentStockTBA === 0);
+      
+      if (hits.length === 0) { 
+          alert(`Tìm thấy ${foundItems.length} mã, nhưng tất cả đều ĐÃ CÓ hàng trưng bày (TBA > 0).`); 
+          return; 
+      }
+      
+      copyToClipboard(hits.map(r => r.code).join('\n'));
+      let msg = `Đã copy ${hits.length} mã CHƯA TRƯNG BÀY (TBA = 0).\n`;
+      msg += `- Tổng nhập: ${inputCodes.length}\n`;
+      msg += `- Tìm thấy trong file: ${foundItems.length}\n`;
+      msg += `- Đạt điều kiện: ${hits.length}`;
+      if (missingCodes.length > 0) {
+          msg += `\n- Không tìm thấy (có thể do sai mã): ${missingCodes.length}`;
+      }
+      alert(msg);
+  };
 
   const availableWarehouses = useMemo(() => {
     const whSet = new Set<string>();
@@ -520,11 +589,29 @@ export const InventoryPanel: React.FC<InventoryPanelProps> = ({ onClose }) => {
              else if (filterBT === '>0') result = result.filter(r => r.currentStockBT > 0);
              else if (filterBT === '<5') result = result.filter(r => r.currentStockBT > 0 && r.currentStockBT < 5);
       }
+      // NEW: Filter TBA
+      if (filterTBA !== 'ALL') {
+          if (filterTBA === '0') result = result.filter(r => r.currentStockTBA === 0);
+          else if (filterTBA === '>0') result = result.filter(r => r.currentStockTBA > 0);
+      }
+      
+      // NEW: Filter Other Stock / Branch Stock
+      if (filterOtherStock !== 'ALL') {
+          result = result.filter(r => {
+             const totalOther = r.allWarehousesStock.reduce((sum, w) => sum + w.stock, 0);
+             if (filterOtherStock === '0') return totalOther === 0;
+             if (filterOtherStock === '>0') return totalOther > 0;
+             return true;
+          });
+      }
+
       if (selectedSource !== 'ALL') {
           // Filter if ANY source warehouse matches selection OR if using allWarehousesStock for display logic
           result = result.filter(r => 
               r.sourcing.some(s => s.sourceWarehouse === selectedSource) || 
-              (quickFilter === 'DISPLAY_CHECK' && r.allWarehousesStock.some(s => s.name === selectedSource))
+              (quickFilter === 'DISPLAY_CHECK' && r.allWarehousesStock.some(s => s.name === selectedSource)) ||
+               // Ensure filtering works for PROMO_CHECK logic if sourcing matches
+              (quickFilter === 'PROMO_CHECK' && r.sourcing.some(s => s.sourceWarehouse === selectedSource))
           );
       }
       if (filterStatus !== 'ALL') {
@@ -600,7 +687,7 @@ export const InventoryPanel: React.FC<InventoryPanelProps> = ({ onClose }) => {
           });
       }
       return result;
-  }, [rawResults, searchText, searchMode, quickFilter, selectedSource, filterBT, filterStatus, sortConfig, promoInput, filterABC, filterCondition]);
+  }, [rawResults, searchText, searchMode, quickFilter, selectedSource, filterBT, filterStatus, sortConfig, promoInput, filterABC, filterCondition, filterTBA, filterOtherStock]);
 
   return (
     <div className="absolute inset-0 bg-black text-gray-200 z-50 flex flex-col font-sans">
@@ -732,18 +819,80 @@ export const InventoryPanel: React.FC<InventoryPanelProps> = ({ onClose }) => {
                                         </th>
                                         {quickFilter === 'PROMO_CHECK' ? (
                                             <>
-                                                <th className="px-4 py-4 text-center cursor-pointer hover:bg-gray-900" onClick={() => handleSort('currentStockBT')}>
-                                                    <div className="flex items-center justify-center space-x-1"><span>Tồn Chính</span><ArrowUpDown className="w-3 h-3 text-gray-600" /></div>
+                                                {/* Main Stock with Filter */}
+                                                <th className="px-4 py-4 text-center">
+                                                    <div className="flex flex-col items-center">
+                                                        <div onClick={() => handleSort('currentStockBT')} className="cursor-pointer mb-1 flex items-center justify-center space-x-1 hover:text-white transition-colors">
+                                                            <span>Tồn Chính</span><ArrowUpDown className="w-3 h-3 text-gray-600" />
+                                                        </div>
+                                                        <select 
+                                                            value={filterBT} 
+                                                            onChange={(e) => setFilterBT(e.target.value)} 
+                                                            className="bg-[#121212] border border-gray-700 rounded text-[10px] text-gray-300 px-1 py-0.5 outline-none focus:border-orange-500"
+                                                        >
+                                                            <option value="ALL">Tất cả</option>
+                                                            <option value=">0">Còn hàng</option>
+                                                            <option value="0">Hết hàng (0)</option>
+                                                            <option value="<5">Thấp (&lt;5)</option>
+                                                        </select>
+                                                    </div>
                                                 </th>
-                                                <th className="px-4 py-4 text-center cursor-pointer hover:bg-gray-900" onClick={() => handleSort('currentStockTBA')}>
-                                                    <div className="flex items-center justify-center space-x-1"><span>Tồn Khác/Max</span><ArrowUpDown className="w-3 h-3 text-gray-600" /></div>
+                                                
+                                                <th className="px-4 py-4 text-center">
+                                                     <div onClick={() => handleSort('currentStockTBA')} className="cursor-pointer flex items-center justify-center space-x-1 hover:text-white transition-colors">
+                                                        <span>Tồn TBA</span><ArrowUpDown className="w-3 h-3 text-gray-600" />
+                                                    </div>
                                                 </th>
-                                                <th className="px-4 py-4 text-center">TT Trưng Bày</th>
+
+                                                {/* Display Info with Filter & Sort */}
+                                                <th className="px-4 py-4 text-center w-1/6">
+                                                     <div className="flex flex-col items-center">
+                                                        <div onClick={() => handleSort('displayDays')} className="cursor-pointer mb-1 flex items-center justify-center space-x-1 hover:text-white transition-colors">
+                                                            <span>Trưng Bày</span><ArrowUpDown className="w-3 h-3 text-gray-600" />
+                                                        </div>
+                                                        <select 
+                                                            value={filterCondition} 
+                                                            onChange={(e) => setFilterCondition(e.target.value)} 
+                                                            className="bg-[#121212] border border-gray-700 rounded text-[10px] text-gray-300 px-1 py-0.5 outline-none focus:border-orange-500"
+                                                        >
+                                                            <option value="ALL">Tất cả</option>
+                                                            <option value="New">Mới (New)</option>
+                                                            <option value="Used">Used</option>
+                                                            <option value="Scratched">Trầy</option>
+                                                        </select>
+                                                    </div>
+                                                </th>
+
+                                                {/* Sales Column (New) */}
+                                                <th className="px-4 py-4 text-center cursor-pointer hover:bg-gray-900" onClick={() => handleSort('sold30Days')}>
+                                                    <div className="flex items-center justify-center space-x-1"><span>Bán 30N</span><ArrowUpDown className="w-3 h-3 text-gray-600" /></div>
+                                                </th>
+
+                                                {/* Top Warehouses */}
+                                                <th className="px-2 py-4 text-center text-[10px] w-16">Top 1</th>
+                                                <th className="px-2 py-4 text-center text-[10px] w-16">Top 2</th>
+
                                                 <th className="px-4 py-4 text-center cursor-pointer hover:bg-gray-900" onClick={() => handleSort('needsRestock')}>
                                                     <div className="flex items-center justify-center space-x-1"><span>Nhu Cầu</span><ArrowUpDown className="w-3 h-3 text-gray-600" /></div>
                                                 </th>
-                                                <th className="px-4 py-4 w-1/4 cursor-pointer hover:bg-gray-900" onClick={() => handleSort('sourcingQty')}>
-                                                    <div className="flex items-center space-x-1"><span>Phân Bổ Nguồn</span><ArrowUpDown className="w-3 h-3 text-gray-600" /></div>
+                                                
+                                                {/* Sourcing with Filter */}
+                                                <th className="px-4 py-4 w-1/5">
+                                                     <div className="flex items-center justify-between">
+                                                        <div onClick={() => handleSort('sourcingQty')} className="cursor-pointer flex items-center space-x-1 hover:text-white transition-colors">
+                                                            <span>Phân Bổ</span><ArrowUpDown className="w-3 h-3 text-gray-600" />
+                                                        </div>
+                                                        <select 
+                                                            value={selectedSource} 
+                                                            onChange={(e) => setSelectedSource(e.target.value)} 
+                                                            className="bg-[#121212] border border-gray-700 rounded text-[10px] text-gray-300 px-1 py-0.5 outline-none focus:border-orange-500 max-w-[80px]"
+                                                        >
+                                                            <option value="ALL">All Sources</option>
+                                                            {availableWarehouses.map(wh => (
+                                                                <option key={wh} value={wh}>{wh}</option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
                                                 </th>
                                             </>
                                         ) : (
@@ -769,8 +918,21 @@ export const InventoryPanel: React.FC<InventoryPanelProps> = ({ onClose }) => {
                                                 
                                                 {quickFilter === 'DISPLAY_CHECK' ? (
                                                      <>
-                                                        <th className="px-4 py-4 text-center cursor-pointer hover:bg-gray-900" onClick={() => handleSort('currentStockTBA')}>
-                                                            <div className="flex items-center justify-center space-x-1"><span>Tồn Trưng Bày</span><ArrowUpDown className="w-3 h-3 text-gray-600" /></div>
+                                                        <th className="px-4 py-4 text-center w-1/6">
+                                                            <div className="flex flex-col items-center">
+                                                                <div onClick={() => handleSort('currentStockTBA')} className="cursor-pointer mb-1 flex items-center space-x-1 hover:text-white transition-colors">
+                                                                    <span>Tồn Trưng Bày</span><ArrowUpDown className="w-3 h-3 text-gray-600" />
+                                                                </div>
+                                                                <select 
+                                                                    value={filterTBA} 
+                                                                    onChange={(e) => setFilterTBA(e.target.value)} 
+                                                                    className="bg-[#121212] border border-gray-700 rounded text-[10px] text-gray-300 px-1 py-0.5 outline-none focus:border-orange-500"
+                                                                >
+                                                                    <option value="ALL">Tất cả</option>
+                                                                    <option value=">0">Còn hàng</option>
+                                                                    <option value="0">Hết hàng (0)</option>
+                                                                </select>
+                                                            </div>
                                                         </th>
                                                         {/* DISPLAY CONDITION FILTER HEADER */}
                                                         <th className="px-4 py-4 text-center w-1/4">
@@ -790,9 +952,28 @@ export const InventoryPanel: React.FC<InventoryPanelProps> = ({ onClose }) => {
                                                                 </select>
                                                             </div>
                                                         </th>
-                                                        <th className="px-4 py-4 w-1/4 cursor-pointer hover:bg-gray-900" onClick={() => handleSort('otherStockQty')}>
-                                                             <div className="flex items-center space-x-1"><span>Tồn Kho Khác</span><ArrowUpDown className="w-3 h-3 text-gray-600" /></div>
+                                                        <th className="px-4 py-4 w-1/4">
+                                                             <div className="flex flex-col items-center">
+                                                                <div onClick={() => handleSort('otherStockQty')} className="cursor-pointer mb-1 flex items-center space-x-1 hover:text-white transition-colors">
+                                                                    <span>Tồn Kho Khác</span><ArrowUpDown className="w-3 h-3 text-gray-600" />
+                                                                </div>
+                                                                <select 
+                                                                    value={filterOtherStock} 
+                                                                    onChange={(e) => setFilterOtherStock(e.target.value)} 
+                                                                    className="bg-[#121212] border border-gray-700 rounded text-[10px] text-gray-300 px-1 py-0.5 outline-none focus:border-orange-500"
+                                                                >
+                                                                    <option value="ALL">Tất cả</option>
+                                                                    <option value=">0">Còn hàng</option>
+                                                                    <option value="0">Hết hàng (0)</option>
+                                                                </select>
+                                                            </div>
                                                         </th>
+
+                                                        {/* Sales Column Header */}
+                                                        <th className="px-4 py-4 text-center cursor-pointer hover:bg-gray-900" onClick={() => handleSort('sold30Days')}>
+                                                             <div className="flex items-center justify-center space-x-1"><span>Bán 30N</span><ArrowUpDown className="w-3 h-3 text-gray-600" /></div>
+                                                        </th>
+
                                                         <th className="px-4 py-4 text-center">Action</th>
                                                      </>
                                                 ) : (
@@ -827,8 +1008,22 @@ export const InventoryPanel: React.FC<InventoryPanelProps> = ({ onClose }) => {
                                                                 </div>
                                                             </div>
                                                         </th>
-                                                        <th className="px-4 py-4 text-center cursor-pointer hover:bg-gray-900" onClick={() => handleSort('currentStockTBA')}>
-                                                            <div className="flex items-center justify-center space-x-1"><span>Tồn Khác</span><ArrowUpDown className="w-3 h-3 text-gray-600" /></div>
+                                                        {/* Branch Stock */}
+                                                        <th className="px-4 py-4 text-center w-1/5">
+                                                            <div className="flex flex-col items-center">
+                                                                <div onClick={() => handleSort('otherStockQty')} className="cursor-pointer mb-1 flex items-center justify-center space-x-1 hover:text-white transition-colors">
+                                                                    <span>Tồn Chi Nhánh</span><ArrowUpDown className="w-3 h-3 text-gray-600" />
+                                                                </div>
+                                                                <select 
+                                                                    value={filterOtherStock} 
+                                                                    onChange={(e) => setFilterOtherStock(e.target.value)} 
+                                                                    className="bg-[#121212] border border-gray-700 rounded text-[10px] text-gray-300 px-1 py-0.5 outline-none focus:border-orange-500"
+                                                                >
+                                                                    <option value="ALL">Tất cả</option>
+                                                                    <option value=">0">Còn hàng</option>
+                                                                    <option value="0">Hết hàng (0)</option>
+                                                                </select>
+                                                            </div>
                                                         </th>
                                                         <th className="px-4 py-4 text-center cursor-pointer hover:bg-gray-900" onClick={() => handleSort('sold30Days')}>
                                                              <div className="flex items-center justify-center space-x-1"><span>Bán 30N</span><ArrowUpDown className="w-3 h-3 text-gray-600" /></div>
@@ -866,13 +1061,14 @@ export const InventoryPanel: React.FC<InventoryPanelProps> = ({ onClose }) => {
                                         const isCritical = r.urgency === 'Critical';
                                         const sortedSources = [...r.sourcing].sort((a, b) => b.quantity - a.quantity);
                                         const usedWarehouses = new Set(r.sourcing.map(s => s.sourceWarehouse));
-                                        const alternativeSources = r.allWarehousesStock
-                                            .filter(w => !usedWarehouses.has(w.name))
-                                            .slice(0, 3); // Top 3
-
+                                        
                                         // Display Logic Helper
                                         const daysDisp = getDaysDisplayed(r.displayInfo?.startDate);
                                         const isDisplayWarning = r.currentStockTBA > 0 && daysDisp > 20 && r.displayInfo?.condition === 'New';
+
+                                        // Top warehouses logic (ensure array is sorted by stock desc in utils)
+                                        const top1 = r.allWarehousesStock[0];
+                                        const top2 = r.allWarehousesStock[1];
 
                                         return (
                                         <tr key={idx} className={`group transition-colors ${isCritical && quickFilter !== 'DISPLAY_CHECK' ? 'bg-[#2a1212] hover:bg-[#3a1a1a]' : 'bg-[#1b1b1b] hover:bg-[#252525]'}`}>
@@ -889,8 +1085,46 @@ export const InventoryPanel: React.FC<InventoryPanelProps> = ({ onClose }) => {
                                             {quickFilter === 'PROMO_CHECK' ? (
                                                 <>
                                                     <td className="px-4 py-4 text-center font-bold text-blue-400">{r.currentStockBT}</td>
-                                                    <td className="px-4 py-4 text-center font-bold text-purple-400">{r.currentStockTBA} / {r.tbaMaxStock}</td>
-                                                    <td className="px-4 py-4 text-center">{/* Logic same */}...</td>
+                                                    
+                                                    <td className="px-4 py-4 text-center font-bold text-purple-400">{r.currentStockTBA}</td>
+
+                                                    {/* Display Info Logic for Promo Check */}
+                                                    <td className="px-4 py-4 text-center">
+                                                        {r.displayInfo ? (
+                                                            <div className="flex flex-col items-center">
+                                                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${r.displayInfo.condition === 'New' ? 'bg-green-900 text-green-400' : 'bg-yellow-900 text-yellow-400'}`}>
+                                                                    {r.displayInfo.condition}
+                                                                </span>
+                                                                <span className="text-[10px] text-gray-500 mt-0.5">{r.displayInfo.startDate}</span>
+                                                            </div>
+                                                        ) : (
+                                                            <span className="text-[10px] text-gray-600">-</span>
+                                                        )}
+                                                    </td>
+
+                                                    {/* Sales */}
+                                                    <td className="px-4 py-4 text-center text-gray-400">{r.sold30Days}</td>
+
+                                                    {/* Top 1 Stock */}
+                                                    <td className="px-2 py-4 text-center">
+                                                        {top1 ? (
+                                                            <div className="flex flex-col">
+                                                                <span className="text-[10px] text-gray-400 truncate max-w-[60px]" title={top1.name}>{top1.name}</span>
+                                                                <span className="text-xs font-bold text-white">{top1.stock}</span>
+                                                            </div>
+                                                        ) : <span className="text-gray-700">-</span>}
+                                                    </td>
+                                                    
+                                                    {/* Top 2 Stock */}
+                                                    <td className="px-2 py-4 text-center">
+                                                        {top2 ? (
+                                                             <div className="flex flex-col">
+                                                                <span className="text-[10px] text-gray-400 truncate max-w-[60px]" title={top2.name}>{top2.name}</span>
+                                                                <span className="text-xs font-bold text-white">{top2.stock}</span>
+                                                            </div>
+                                                        ) : <span className="text-gray-700">-</span>}
+                                                    </td>
+
                                                     <td className="px-4 py-4 text-center font-bold text-red-500">{r.needsRestock}</td>
                                                     <td className="px-4 py-4">
                                                          <div className="flex flex-col gap-1.5">
@@ -902,6 +1136,7 @@ export const InventoryPanel: React.FC<InventoryPanelProps> = ({ onClose }) => {
                                                             ))}
                                                         </div>
                                                     </td>
+                                                    <td className="px-4 py-4 text-center"><button onClick={() => setEditingItem(r)} className="hover:bg-gray-800 p-2 rounded-full"><Edit className="w-4 h-4 text-blue-400"/></button></td>
                                                 </>
                                             ) : (
                                                 <>
@@ -950,6 +1185,9 @@ export const InventoryPanel: React.FC<InventoryPanelProps> = ({ onClose }) => {
                                                                 </div>
                                                             </td>
 
+                                                            {/* NEW: Sales Column Data */}
+                                                            <td className="px-4 py-4 text-center text-gray-400">{r.sold30Days}</td>
+
                                                             <td className="px-4 py-4 text-center"><button onClick={() => setEditingItem(r)} className="hover:bg-gray-800 p-2 rounded-full"><Edit className="w-4 h-4 text-blue-400"/></button></td>
                                                         </>
                                                     ) : (
@@ -961,7 +1199,23 @@ export const InventoryPanel: React.FC<InventoryPanelProps> = ({ onClose }) => {
                                                                 {r.abcClass === 'C' && <span className="px-2 py-0.5 bg-gray-800 text-gray-500 text-xs font-bold rounded border border-gray-700">C</span>}
                                                                 {r.abcClass === 'N' && <span className="text-gray-600 text-xs">-</span>}
                                                             </td>
-                                                            <td className="px-4 py-4 text-center text-purple-400">{r.currentStockTBA}</td>
+                                                            
+                                                            {/* NEW: Explicit "Branch Stock" Column instead of just TBA */}
+                                                            <td className="px-4 py-4">
+                                                                <div className="flex flex-col gap-1 max-h-20 overflow-y-auto">
+                                                                    {r.allWarehousesStock.length > 0 ? (
+                                                                        r.allWarehousesStock.map((w, i) => (
+                                                                             <div key={i} className="flex justify-between text-[10px] bg-[#121212] border border-gray-800 px-1.5 py-0.5 rounded">
+                                                                                <span className="text-gray-400 truncate max-w-[60px]" title={w.name}>{w.name}</span>
+                                                                                <span className="font-bold text-purple-400">{w.stock}</span>
+                                                                            </div>
+                                                                        ))
+                                                                    ) : (
+                                                                        <span className="text-center text-[10px] text-gray-600 block">-</span>
+                                                                    )}
+                                                                </div>
+                                                            </td>
+
                                                             <td className="px-4 py-4 text-center text-gray-400">{r.sold30Days}</td>
                                                             <td className="px-4 py-4 text-center">
                                                                 <div className="flex flex-col items-center">
@@ -991,17 +1245,6 @@ export const InventoryPanel: React.FC<InventoryPanelProps> = ({ onClose }) => {
                                                                                     </div>
                                                                                 </div>
                                                                             ))}
-                                                                            {alternativeSources.length > 0 && (
-                                                                                <div className="border-t border-gray-800 mt-1 pt-1">
-                                                                                    <span className="text-[9px] text-gray-600 font-bold block mb-1 uppercase tracking-wide">Kho khác có hàng:</span>
-                                                                                    {alternativeSources.map((alt, idx) => (
-                                                                                        <div key={`alt-${idx}`} className="flex justify-between text-[10px] text-gray-500 px-1">
-                                                                                            <span>{alt.name}</span>
-                                                                                            <span className="font-mono text-gray-400">{alt.stock}</span>
-                                                                                        </div>
-                                                                                    ))}
-                                                                                </div>
-                                                                            )}
                                                                         </>
                                                                     ) : (
                                                                         r.missingQuantity > 0 && !r.isDiscontinued ? (
